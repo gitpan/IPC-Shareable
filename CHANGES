@@ -111,3 +111,10 @@ Revision history for Perl extension IPC::Shareable.
 0.54  Mon Jan  8 11:52:28 EST 2001
         - Fix to allow IPC::Shareable to work with 1.0.* versions of
           Storable
+
+0.60  Mon Mar  5 15:20:18 EST 2001
+        - Lee Lindley (lee.lindley@bigfoot.com) added the _was_changed
+          optimization, improved the locking functionality, fixed
+          numerous bugs, and generally cleaned things up; thanks.
+        - Removed support for "no" as a false value in arguments;
+          thanks to Dave Rolsky <autarch@urth.org>

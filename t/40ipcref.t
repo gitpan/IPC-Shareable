@@ -20,9 +20,9 @@ defined $pid or die "Cannot fork : $!";
 if ($pid == 0) {
     # --- Child
     sleep unless $awake;
-    tie($hv, 'IPC::Shareable', 'hash', { destroy => 'no' })
+    tie($hv, 'IPC::Shareable', 'hash', { destroy => 0 })
 	or undef $ok;
-    tie($av, 'IPC::Shareable', 'arry', { destroy => 'no' })
+    tie($av, 'IPC::Shareable', 'arry', { destroy => 0 })
 	or undef $ok;
     print $ok ? "ok $t\n" : "not ok $t\n";
 

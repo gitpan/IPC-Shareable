@@ -22,7 +22,7 @@ sub gonzo {
 
 # --- remove()
 my $sv;
-(my $s = tie $sv, 'IPC::Shareable', { destroy => 'no' })
+(my $s = tie $sv, 'IPC::Shareable', { destroy => 0 })
     or undef $ok;
 print $ok ? "ok $t\n" : "not ok $t\n";
 $sv = 'foobar';
@@ -45,7 +45,7 @@ defined $pid or die "Cannot fork : $!";
 if ($pid == 0) {
     # --- Child
     sleep unless $awake;
-    my $s = tie($sv, 'IPC::Shareable', 'hash', { destroy => 'no' })
+    my $s = tie($sv, 'IPC::Shareable', 'hash', { destroy => 0 })
 	or undef $ok;
     print $ok ? "ok $t\n" : "not ok $t\n";
 
@@ -68,7 +68,7 @@ if ($pid == 0) {
     print $ok ? "ok $t\n" : "not ok $t\n";
 
     ++$t;
-    tie($sv, 'IPC::Shareable', 'kids', { create => 'yes', destroy => 'no' })
+    tie($sv, 'IPC::Shareable', 'kids', { create => 'yes', destroy => 0 })
       or undef $ok;
     print $ok ? "ok $t\n" : "not ok $t\n";
     $sv = 'the kid was here';
@@ -76,7 +76,7 @@ if ($pid == 0) {
     exit;
 } else {
     # --- Parent
-    my $s = tie($sv, 'IPC::Shareable', 'hash', { create => 'yes', destroy => 'no' })
+    my $s = tie($sv, 'IPC::Shareable', 'hash', { create => 'yes', destroy => 0 })
 	or undef $ok;
     kill ALRM => $pid;
     my $id = $s->{_shm}->id;
@@ -89,7 +89,7 @@ if ($pid == 0) {
 }
 
 ++$t;
-$s = tie($sv, 'IPC::Shareable', 'kids', { destroy => 'no' })
+$s = tie($sv, 'IPC::Shareable', 'kids', { destroy => 0 })
   or undef $ok;
 print $ok ? "ok $t\n" : "not ok $t\n";
 $id = $s->{_shm}->id;

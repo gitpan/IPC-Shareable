@@ -10,9 +10,6 @@ with me.  Thanks!
 Thanks to all others with comments or bug fixes, especially:
 
 Stephane Bortzmeyer <bortzmeyer@pasteur.fr>
-Michael Stevens <michael@malkav.imaginet.co.uk>
-Richard Neal <richard@imaginet.co.uk>
-Jason Stevens <jstevens@chron.com>
 Doug MacEachern <dougm@telebusiness.co.nz>
 Robert Emmery <roberte@netscape.com>
 Mohammed J. Kabir <kabir@intevo.com>
@@ -21,10 +18,12 @@ Tim Fries <timf@dicecorp.com>
 Joe Thomas <jthomas@women.com>
 Paul Makepeace <Paul.Makepeace@realprogrammers.com>
 Raphael Manfredi <Raphael_Manfredi@pobox.com>
+Lee.Lindley@bigfoot.com
+Dave Rolsky <autarch@urth.org>
 
 If you notice any problems, create any patches, or add any features,
 be sure to let me know so your name can be in the above list!
 
 --
 Ben Sugars <bsugars@canoe.ca>
-January 8, 2001
+March 5, 2001

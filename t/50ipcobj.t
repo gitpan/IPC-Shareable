@@ -48,7 +48,7 @@ if ($pid == 0) {
     my $d;
 
     ++$t;
-    tie($d, 'IPC::Shareable', 'obj', { destroy => 'no' })
+    tie($d, 'IPC::Shareable', 'obj', { destroy => 0 })
 	or undef $ok;
     $ok = (ref $d eq 'Dummy');
     print $ok ? "ok $t\n" : "not ok $t\n";

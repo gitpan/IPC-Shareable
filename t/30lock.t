@@ -21,24 +21,24 @@ defined $pid or die "Cannot fork: $!\n";
 if ($pid == 0) {
     # --- Child
     sleep unless $awake;
-    tie($sv, 'IPC::Shareable', data => { destroy => 'no' })
-	or die "child process can't tie \$sv";
+    tie($sv, 'IPC::Shareable', data => { destroy => 0 })
+        or die "child process can't tie \$sv";
     for (0 .. 99) {
-  	(tied $sv)->shlock;
-	++$sv;
-	(tied $sv)->shunlock;
+        (tied $sv)->shlock;
+        ++$sv;
+        (tied $sv)->shunlock;
     }
     exit;
 } else {
     # --- Parent
     tie($sv, 'IPC::Shareable', data => { create => 'yes', destroy => 'yes' })
-	or die "parent process can't tie \$sv";
+        or die "parent process can't tie \$sv";
     $sv = 0;
     kill ALRM => $pid;
     for (0 .. 99) {
-	(tied $sv)->shlock;
-	++$sv;
-	(tied $sv)->shunlock;
+        (tied $sv)->shlock;
+        ++$sv;
+        (tied $sv)->shunlock;
     }
     waitpid($pid, 0);
     $sv == 200 or undef $ok;

@@ -14,7 +14,7 @@ my $ok = 1;
 
 my %shareOpts = (
 		 create =>       'yes',
-		 exclusive =>    'no',
+		 exclusive =>    0,
 		 mode =>         0644,
 		 destroy =>      'yes',
 		 );
@@ -31,9 +31,9 @@ if ($pid == 0) {
     my %hv;
     my $ipch = tie(%hv, 'IPC::Shareable', "data", {
 	create    => 'yes',
-	exclusive => 'no',
+	exclusive => 0,
 	mode      => 0644,
-	destroy   => 'no',
+	destroy   => 0,
     }) or undef $ok;
     print $ok ? "ok $t\n" : "not ok $t\n";
 
@@ -63,7 +63,7 @@ if ($pid == 0) {
     my %hv;
     my $ipch = tie(%hv, 'IPC::Shareable', "data", {
 	create    => 1,
-	exclusive => 'no',
+	exclusive => 0,
 	mode      => 0666,
 	size      => 1024*512,
 	destroy   => 'yes',

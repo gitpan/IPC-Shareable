@@ -20,7 +20,7 @@ defined $pid or die "Cannot fork: $!";
 if ($pid == 0) {
     # --- Child
     sleep unless $awake;
-    tie($sv, 'IPC::Shareable', data => { destroy => 'no' })
+    tie($sv, 'IPC::Shareable', data => { destroy => 0 })
 	or undef $ok;
 
     $sv eq 'bar' or undef $ok;

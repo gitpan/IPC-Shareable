@@ -1,7 +1,5 @@
 package IPC::Shareable;
 
-use Carp qw(cluck);
-
 require 5.00503;
 use strict;
 use IPC::Semaphore;
@@ -10,6 +8,7 @@ use IPC::SysV qw(
                  IPC_PRIVATE
                  IPC_CREAT
                  IPC_EXCL
+                 IPC_NOWAIT
                  SEM_UNDO
                  );
 use Storable 0.6 qw(
@@ -17,17 +16,65 @@ use Storable 0.6 qw(
                     thaw
                     );
 
-use vars qw($VERSION);
-$VERSION = 0.54;
+use vars qw( $VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS );
+
+$VERSION = 0.60;
+
+use constant LOCK_SH => 1;
+use constant LOCK_EX => 2;
+use constant LOCK_NB => 4;
+use constant LOCK_UN => 8;
+
+require Exporter;
+@ISA = 'Exporter';
+@EXPORT = ();
+@EXPORT_OK = qw(LOCK_EX LOCK_SH LOCK_NB LOCK_UN);
+%EXPORT_TAGS = (
+        all     => [qw( LOCK_EX LOCK_SH LOCK_NB LOCK_UN )],
+        lock    => [qw( LOCK_EX LOCK_SH LOCK_NB LOCK_UN )],
+        'flock' => [qw( LOCK_EX LOCK_SH LOCK_NB LOCK_UN )],
+);
+Exporter::export_ok_tags('all', 'lock', 'flock');
 
 use constant DEBUGGING     => ($ENV{SHAREABLE_DEBUG} or 0);
 use constant SHM_BUFSIZ    =>  65536;
-use constant SEM_LOCKER    =>  0;
-use constant SEM_MARKER    =>  1;
-use constant SHM_LOCK_WAIT =>  0;
-use constant SHM_LOCK_EX   =>  1;
-use constant SHM_LOCK_UN   => -1;
+use constant SEM_MARKER    =>  0;
 use constant SHM_EXISTS    =>  1;
+
+# Locking scheme copied from IPC::ShareLite -- ltl
+my %semop_args = (
+    (LOCK_EX),
+        [       
+                1, 0, 0,                        # wait for readers to finish
+                2, 0, 0,                        # wait for writers to finish
+                2, 1, SEM_UNDO,                 # assert write lock
+        ],
+    (LOCK_EX|LOCK_NB),
+        [
+                1, 0, IPC_NOWAIT,               # wait for readers to finish
+                2, 0, IPC_NOWAIT,               # wait for writers to finish
+                2, 1, (SEM_UNDO | IPC_NOWAIT),  # assert write lock
+        ],
+    (LOCK_EX|LOCK_UN),
+        [
+                2, -1, (SEM_UNDO | IPC_NOWAIT),
+        ],
+
+    (LOCK_SH),
+        [
+                2, 0, 0,                        # wait for writers to finish
+                1, 1, SEM_UNDO,                 # assert shared read lock
+        ],
+    (LOCK_SH|LOCK_NB),
+        [
+                2, 0, IPC_NOWAIT,               # wait for writers to finish
+                1, 1, (SEM_UNDO | IPC_NOWAIT),  # assert shared read lock
+        ],
+    (LOCK_SH|LOCK_UN),
+        [
+                1, -1, (SEM_UNDO | IPC_NOWAIT), # remove shared read lock
+        ],
+);
 
 my %Def_Opts = (
                 key       => IPC_PRIVATE,
@@ -53,18 +100,30 @@ sub _debug;
 # --- Public methods
 sub shlock {
     _trace @_                                                    if DEBUGGING;
-    my $self = shift;
+    my ($self, $typelock) = @_;
+    ($typelock = LOCK_EX) unless defined $typelock;
 
-    return 1 if $self->{_lock};
+    return $self->shunlock if ($typelock & LOCK_UN);
+
+    return 1 if ($self->{_lock} & $typelock);
+
+    # If they have a different lock than they want, release it first
+    $self->shunlock if ($self->{_lock});
 
     my $sem = $self->{_sem};
-    _debug "Attempting lock on", $self->{_shm}, "via", $sem->id  if DEBUGGING;
-    $sem->op(SEM_LOCKER, SHM_LOCK_WAIT, SEM_UNDO,
-             SEM_LOCKER, SHM_LOCK_EX,   SEM_UNDO);
-    $self->{_lock} = 'lock';
-    _debug "Got lock on", $self->{_shm}, "via", $sem->id         if DEBUGGING;
+    _debug "Attempting type=", $typelock, " lock on", $self->{_shm}, 
+        "via", $sem->id                                         if DEBUGGING;
+    my $return_val = $sem->op(@{ $semop_args{$typelock} });
+    if ($return_val) {
+        $self->{_lock} = $typelock;
+        _debug "Got lock on", $self->{_shm}, "via", $sem->id    if DEBUGGING;
 
-    1;
+        $self->{_data} = _thaw($self->{_shm}),
+
+    } else {
+        _debug "Failed lock on", $self->{_shm}, "via", $sem->id if DEBUGGING;
+    }
+    return $return_val;
 }
 
 sub shunlock {
@@ -72,11 +131,20 @@ sub shunlock {
     my $self = shift;
 
     return 1 unless $self->{_lock};
-
+    if ($self->{_was_changed}) {
+        defined _freeze($self->{_shm} => $self->{_data}) or do {
+            require Carp;
+            Carp::croak "Could not write to shared memory: $!\n";
+        };
+        $self->{_was_changed} = 0;
+    }
     my $sem = $self->{_sem};
     _debug "Freeing lock on", $self->{_shm}, "via", $sem->id     if DEBUGGING;
-    $sem->op(SEM_LOCKER, SHM_LOCK_UN, SEM_UNDO);
-    $self->{_lock} = '';
+    my $typelock = $self->{_lock} | LOCK_UN;
+    $typelock ^= LOCK_NB if ($typelock & LOCK_NB);
+    $sem->op(@{ $semop_args{$typelock} });
+
+    $self->{_lock} = 0;
     _debug "Lock on", $self->{_shm}, "via", $sem->id, "freed"    if DEBUGGING;
 
     1;
@@ -106,7 +174,7 @@ sub STORE {
 
     $Global_Reg{$self->{_shm}->id} ||= $self;
 
-    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
+    $self->{_data} = _thaw($self->{_shm}) unless ($self->{_lock});
   TYPE: {
       if ($self->{_type} eq 'SCALAR') {
           my $val = shift;
@@ -124,9 +192,7 @@ sub STORE {
       if ($self->{_type} eq 'HASH') {
           my $key = shift;
           my $val = shift;
-	  if (_need_tie($val)) {
-            _mg_tie($self => $val);
-	  }
+          _mg_tie($self => $val) if _need_tie($val);
           $self->{_data}->{$key} = $val;
           last TYPE;
       }
@@ -134,11 +200,14 @@ sub STORE {
       Carp::croak "Variables of type $self->{_type} not supported";
   }
 
-    defined _freeze($self->{_shm} => $self->{_data}) or do {
-        require Carp;
-        Carp::croak "Could not write to shared memory: $!\n";
-    };
-
+    if ($self->{_lock} & LOCK_EX) {
+        $self->{_was_changed} = 1;
+    } else {
+        defined _freeze($self->{_shm} => $self->{_data}) or do {
+            require Carp;
+            Carp::croak "Could not write to shared memory: $!\n";
+        };
+    }
     return 1;
 }
 
@@ -149,7 +218,8 @@ sub FETCH {
     $Global_Reg{$self->{_shm}->id} ||= $self;
 
     my $data;
-    if ($self->{_iterating}) {
+    if ($self->{_lock} || $self->{_iterating}) {
+        $self->{_iterating} = ''; # In case we break out
         $data = $self->{_data};
     } else {
         $data = _thaw($self->{_shm});
@@ -209,10 +279,14 @@ sub CLEAR {
         Carp::croak "Attempt to clear non-aggegrate";
     }
 
-    defined _freeze($self->{_shm} => $self->{_data}) or do {
-        require Carp;
-        Carp::croak "Could not write to shared memory: $!";
-    };
+    if ($self->{_lock} & LOCK_EX) {
+        $self->{_was_changed} = 1;
+    } else {
+        defined _freeze($self->{_shm} => $self->{_data}) or do {
+            require Carp;
+            Carp::croak "Could not write to shared memory: $!";
+        };
+    }
 }
 
 sub DELETE {
@@ -220,11 +294,16 @@ sub DELETE {
     my $self = shift;
     my $key  = shift;
 
+    $self->{_data} = _thaw($self->{_shm}) unless $self->{_lock};
     my $val = delete $self->{_data}->{$key};
-    defined _freeze($self->{_shm} => $self->{_data}) or do {
-        require Carp;
-        Carp::croak "Could not write to shared memory: $!";
-    };
+    if ($self->{_lock} & LOCK_EX) {
+        $self->{_was_changed} = 1;
+    } else {
+        defined _freeze($self->{_shm} => $self->{_data}) or do {
+            require Carp;
+            Carp::croak "Could not write to shared memory: $!";
+        };
+    }
 
     return $val;
 }
@@ -234,7 +313,7 @@ sub EXISTS {
     my $self = shift;
     my $key  = shift;
 
-    $self->{_data} = _thaw($self->{_shm});
+    $self->{_data} = _thaw($self->{_shm}) unless $self->{_lock};
     return exists $self->{_data}->{$key};
 }
 
@@ -245,7 +324,7 @@ sub FIRSTKEY {
 
     _debug "setting hash iterator on", $self->{_shm}->id         if DEBUGGING;
     $self->{_iterating} = 1;
-    $self->{_data} = _thaw($self->{_shm});
+    $self->{_data} = _thaw($self->{_shm}) unless $self->{_lock};
     my $reset = keys %{$self->{_data}};
     my $first = each %{$self->{_data}};
     return $first;
@@ -255,17 +334,14 @@ sub NEXTKEY {
     _trace @_                                                    if DEBUGGING;
     my $self = shift;
 
-    # XXX Don't _thaw since we're iterating?
+    # caveat emptor if hash was changed by another process
     my $next = each %{$self->{_data}};
     if (not defined $next) {
         _debug "resetting hash iterator on", $self->{_shm}->id   if DEBUGGING;
         $self->{_iterating} = '';
-        defined _freeze($self->{_shm} => $self->{_data}) or do {
-            require Carp;
-            Carp::croak "Could not write to shared memory: $!";
-        };
         return;
     } else {
+        $self->{_iterating} = 1;
         return $next;
     }
 }
@@ -280,25 +356,34 @@ sub PUSH {
     my $self = shift;
 
     $Global_Reg{$self->{_shm}->id} ||= $self;
-    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data}) unless $self->{_lock};
 
     push @{$self->{_data}} => @_;
-    defined _freeze($self->{_shm} => $self->{_data}) or do {
-        require Carp;
-        Carp::croak "Could not write to shared memory: $!";
-    };
+    if ($self->{_lock} & LOCK_EX) {
+        $self->{_was_changed} = 1;
+    } else {
+        defined _freeze($self->{_shm} => $self->{_data}) or do {
+            require Carp;
+            Carp::croak "Could not write to shared memory: $!";
+        };
+    }
 }
 
 sub POP {
     _trace @_                                                    if DEBUGGING;
     my $self = shift;
 
-    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data}) unless $self->{_lock};
+
     my $val = pop @{$self->{_data}};
-    defined _freeze($self->{_shm} => $self->{_data}) or do {
-        require Carp;
-        Carp::croak "Could not write to shared memory: $!";
-    };
+    if ($self->{_lock} & LOCK_EX) {
+        $self->{_was_changed} = 1;
+    } else {
+        defined _freeze($self->{_shm} => $self->{_data}) or do {
+            require Carp;
+            Carp::croak "Could not write to shared memory: $!";
+        };
+    }
     return $val;
 }
 
@@ -306,12 +391,16 @@ sub SHIFT {
     _trace @_                                                    if DEBUGGING;
     my $self = shift;
 
-    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data}) unless $self->{_lock};
     my $val = shift @{$self->{_data}};
-    defined _freeze($self->{_shm} => $self->{_data}) or do {
-        require Carp;
-        Carp::croak "Could not write to shared memory: $!";
-    };
+    if ($self->{_lock} & LOCK_EX) {
+        $self->{_was_changed} = 1;
+    } else {
+        defined _freeze($self->{_shm} => $self->{_data}) or do {
+            require Carp;
+            Carp::croak "Could not write to shared memory: $!";
+        };
+    }
     return $val;
 }
 
@@ -319,24 +408,33 @@ sub UNSHIFT {
     _trace @_                                                    if DEBUGGING;
     my $self = shift;
 
-    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
-    unshift @{$self->{_data}} => @_;
-    defined _freeze($self->{_shm} => $self->{_data}) or do {
-        require Carp;
-        Carp::croak "Could not write to shared memory: $!";
-    };
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data}) unless $self->{_lock};
+    my $val = unshift @{$self->{_data}} => @_;
+    if ($self->{_lock} & LOCK_EX) {
+        $self->{_was_changed} = 1;
+    } else {
+        defined _freeze($self->{_shm} => $self->{_data}) or do {
+            require Carp;
+            Carp::croak "Could not write to shared memory: $!";
+        };
+    }
+    return $val;
 }
 
 sub SPLICE {
     _trace @_                                                    if DEBUGGING;
     my($self, $off, $n, @av) = @_;
 
-    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data}) unless $self->{_lock};
     my @val = splice @{$self->{_data}}, $off, $n => @av;
-    defined _freeze($self->{_shm} => $self->{_data}) or do {
-        require Carp;
-        Carp::croak "Could not write to shared memory: $!";
-    };
+    if ($self->{_lock} & LOCK_EX) {
+        $self->{_was_changed} = 1;
+    } else {
+        defined _freeze($self->{_shm} => $self->{_data}) or do {
+            require Carp;
+            Carp::croak "Could not write to shared memory: $!";
+        };
+    }
     return @val;
 }
 
@@ -344,8 +442,7 @@ sub FETCHSIZE {
     _trace @_                                                    if DEBUGGING;
     my $self = shift;
 
-    my $data = _thaw($self->{_shm});
-    $self->{_data} = $data;
+    $self->{_data} = _thaw($self->{_shm}) unless $self->{_lock};
     return scalar(@{$self->{_data}});
 }
 
@@ -354,11 +451,17 @@ sub STORESIZE {
     my $self = shift;
     my $n    = shift;
 
+    $self->{_data} = _thaw($self->{_shm}) unless $self->{_lock};
     $#{@{$self->{_data}}} = $n - 1;
-    defined _freeze($self->{_shm} => $self->{_data}) or do {
-        require Carp;
-        Carp::croak "Could not write to shared memory: $!";
-    };
+    if ($self->{_lock} & LOCK_EX) {
+        $self->{_was_changed} = 1;
+    } else {
+        defined _freeze($self->{_shm} => $self->{_data}) or do {
+            require Carp;
+            Carp::croak "Could not write to shared memory: $!";
+        };
+    }
+    return $n;
 }
 
 sub clean_up {
@@ -405,8 +508,7 @@ END {
     _trace @_                                                    if DEBUGGING;
     for my $s (values %Proc_Reg) {
         shunlock($s);
-        next unless $s->{_opts}->{destroy} and
-                    $s->{_opts}->{destroy} ne 'no';
+        next unless $s->{_opts}->{destroy};
         next unless $s->{_opts}->{_owner} == $$;
         remove($s);
     }
@@ -419,24 +521,32 @@ sub _freeze {
     my $water = shift;
 
     my $ice = freeze $water;
-    my $stuff = 'IPC::Shareable' . $ice;
-    _debug "writing to shm segment ", $s->id, ": ", $stuff       if DEBUGGING;
-    $s->shmwrite($stuff);
+    # Could be a large string.  No need to copy it.  substr more efficient
+    substr $ice, 0, 0, 'IPC::Shareable';
+
+    _debug "writing to shm segment ", $s->id, ": ", $ice         if DEBUGGING;
+    if (length($ice) > $s->size) {
+        require Carp;
+        Carp::croak "Length of shared data exceeds shared segment size";
+    };
+    $s->shmwrite($ice);
 }
 
 sub _thaw {
     _trace @_                                                    if DEBUGGING;
     my $s = shift;
 
-    my $stuff = $s->shmread;
-    _debug "read from shm segment ", $s->id, ": ", $stuff        if DEBUGGING;
-    my($tag, $ice) = unpack 'a14 a*' => $stuff;
+    my $ice = $s->shmread;
+    _debug "read from shm segment ", $s->id, ": ", $ice          if DEBUGGING;
+
+    my $tag = substr $ice, 0, 14, '';
+
     if ($tag eq 'IPC::Shareable') {
         my $water = thaw $ice;
-	defined($water) or do {
-	    require Carp;
-	    Carp::croak "Munged shared memory segment (size exceeded?)";
-	};
+        defined($water) or do {
+            require Carp;
+            Carp::croak "Munged shared memory segment (size exceeded?)";
+        };
         return $water;
     } else {
         return;
@@ -460,25 +570,26 @@ sub _tie {
     };
     _debug "shared memory id is", $s->id                         if DEBUGGING;
 
-    my $sem = IPC::Semaphore->new($key, 2, $flags);
+    my $sem = IPC::Semaphore->new($key, 3, $flags);
     defined $sem or do {
         require Carp;
         Carp::croak "Could not create semaphore set: $!\n";
     };
     _debug "semaphore id is", $sem->id                           if DEBUGGING;
 
-    $sem->op(SEM_LOCKER, SHM_LOCK_WAIT, SEM_UNDO,
-             SEM_LOCKER, SHM_LOCK_EX,   SEM_UNDO);
-
+    unless ( $sem->op(@{ $semop_args{(LOCK_SH)} }) ) {
+        require Carp;
+        Carp::croak "Could not obtain semaphore set lock: $!\n";
+    }
     my $sh = {
         _iterating => '',
         _key       => $key,
-        _lock      => '',
+        _lock      => 0,
         _opts      => $opts,
         _shm       => $s,
         _sem       => $sem,
         _type      => $type,
-        
+        _was_changed => 0,
     };
     $sh->{_data} = _thaw($s),
 
@@ -494,7 +605,7 @@ sub _tie {
           };
     }
 
-    $sem->op(SEM_LOCKER, SHM_LOCK_UN, SEM_UNDO);
+    $sem->op(@{ $semop_args{(LOCK_SH|LOCK_UN)} });
 
     _debug "IPC::Shareable instance created:", $sh               if DEBUGGING;
 
@@ -513,11 +624,16 @@ sub _parse_args {
         $opts->{key} = $proto;
     }
     for my $k (keys %Def_Opts) {
-	if (not defined $opts->{$k}) {
-	    $opts->{$k} = $Def_Opts{$k};
-	} elsif ($opts->{$k} eq 'no') {
-	    $opts->{$k} = '';
-	}
+        if (not defined $opts->{$k}) {
+            $opts->{$k} = $Def_Opts{$k};
+        } elsif ($opts->{$k} eq 'no') {
+            if ($^W) {
+                require Carp;
+                Carp::carp("Use of `no' in IPC::Shareable args is obsolete");
+            }
+
+            $opts->{$k} = '';
+        }
     }
     $opts->{_owner} = ($opts->{_owner} or $$);
     $opts->{_magic} = ($opts->{_magic} or '');
@@ -549,8 +665,8 @@ sub _shm_flags {
     my $hv = shift;
     my $flags = 0;
     
-    $flags |= IPC_CREAT if $hv->{create}    and    $hv->{create} ne 'no';
-    $flags |= IPC_EXCL  if $hv->{exclusive} and $hv->{exclusive} ne 'no';
+    $flags |= IPC_CREAT if $hv->{create};
+    $flags |= IPC_EXCL  if $hv->{exclusive};
     $flags |= ($hv->{mode} or 0666);
 
     return $flags;
@@ -692,13 +808,16 @@ IPC::Shareable - share Perl variables between processes
 
 =head1 SYNOPSIS
 
- use IPC::Shareable;
+ use IPC::Shareable (':lock');
  tie SCALAR, 'IPC::Shareable', GLUE, OPTIONS;
  tie ARRAY,  'IPC::Shareable', GLUE, OPTIONS;
  tie HASH,   'IPC::Shareable', GLUE, OPTIONS;
 
  (tied VARIABLE)->shlock;
  (tied VARIABLE)->shunlock;
+
+ (tied VARIABLE)->shlock(LOCK_SH|LOCK_NB) 
+        or print "resource unavailable\n";
 
  (tied VARIABLE)->remove;
 
@@ -741,7 +860,7 @@ for a shared memory segment (the exact value is system-dependent).
 The bound data structures are all linearized (using Raphael Manfredi's
 Storable module) before being slurped into shared memory.  Upon
 retrieval, the original format of the data structure is recovered.
-Semaphore flags are used for locking data between competing processes.
+Semaphore flags can be used for locking data between competing processes.
 
 =head1 OPTIONS
 
@@ -758,9 +877,15 @@ is equivalent to
  tie $variable, 'IPC::Shareable', { key => 'data', ... };
 
 Boolean option values can be specified using a value that evaluates to
-either true or false in the Perl sense, or by using the word B<yes>
-for true and the word B<no> for false.  (Previous versions accepted
-case-insensitive forms of YES/NO; support for this has been removed.)
+either true or false in the Perl sense.
+
+NOTE: Earlier versions allowed you to use the word B<yes> for true and
+the word B<no> for false, but support for this "feature" is being
+removed.  B<yes> will still act as true (since it is true, in the Perl
+sense), but use of the word B<no> now emits an (optional) warning and
+then converts to a false value.  This warning will become mandatory in a
+future release and then at some later date the use of B<no> will
+stop working altogether.
 
 The following fields are recognized in the options hash.
 
@@ -781,19 +906,19 @@ be shared with other processes.
 B<create> is used to control whether calls to tie() create new shared
 memory segments or not.  If B<create> is set to a true value,
 IPC::Shareable will create a new binding associated with GLUE as
-needed.  If B<create> is false (or equal to B<no>), IPC::Shareable
-will not attempt to create a new shared memory segment associated with
-GLUE.  In this case, a shared memory segment associated with GLUE must
-already exist or the call to tie() will fail and return undef.  The
-default is B<no>.
+needed.  If B<create> is false, IPC::Shareable will not attempt to
+create a new shared memory segment associated with GLUE.  In this
+case, a shared memory segment associated with GLUE must already exist
+or the call to tie() will fail and return undef.  The default is
+false.
 
 =item B<exclusive>
 
 If B<exclusive> field is set to a true value, calls to tie() will fail
 (returning undef) if a data binding associated with GLUE already
-exists.  If set to a false value (or equal to B<no>), calls to tie()
-will succeed even if a shared memory segment associated with GLUE
-already exists.  The default is B<no>.
+exists.  If set to a false value, calls to tie() will succeed even if
+a shared memory segment associated with GLUE already exists.  The
+default is false
 
 =item B<mode>
 
@@ -808,7 +933,11 @@ readable and writable).
 
 If set to a true value, the shared memory segment underlying the data
 binding will be removed when the process calling tie() exits
-(gracefully)[3].  Use this option with care.  The default is B<no>.
+(gracefully)[3].  Use this option with care.  In particular
+you should not use this option in a program that will fork
+after binding the data.  On the other hand, shared memory is
+a finite resource and should be released if it is not needed.
+The default is false 
 
 =item B<size>
 
@@ -820,19 +949,20 @@ segment allocated.  The default is IPC::Shareable::SHM_BUFSIZ().
 Default values for options are
 
  key       => IPC_PRIVATE,
- create    => 'no',
- exclusive => 'no',
- destroy   => 'no',
- mode      => 'no',
+ create    => 0,
+ exclusive => 0,
+ destroy   => 0,
+ mode      => 0,
  size      => IPC::Shareable::SHM_BUFSIZ(),
 
 =head1 LOCKING
 
-IPC::Shareable provides methods to implement application-level locking
-of the shared data structures.  These methods are called shlock() and
-shunlock().  To use them you must first get the object underlying the
-tied variable, either by saving the return value of the original call
-to tie() or by using the built-in tied() function.
+IPC::Shareable provides methods to implement application-level
+advisory locking of the shared data structures.  These methods are
+called shlock() and shunlock().  To use them you must first get the
+object underlying the tied variable, either by saving the return
+value of the original call to tie() or by using the built-in tied()
+function.
 
 To lock a variable, do this:
 
@@ -845,9 +975,23 @@ or equivalently
  tie($scalar, 'IPC::Shareable', $glue, { %options });
  (tied $scalar)->shlock;
 
-This will place an exclusive lock on the data of $scalar.
+This will place an exclusive lock on the data of $scalar.  You can
+also get shared locks or attempt to get a lock without blocking.
+IPC::Shareable makes the constants LOCK_EX, LOCK_SH, LOCK_UN, and
+LOCK_NB exportable to your address space with the export tags
+C<:lock>, C<:flock>, or C<:all>.  The values should be the same as
+the standard C<flock> option arguments.
 
-To unlock a variable do this:
+ if ( (tied $scalar)->shlock(LOCK_SH|LOCK_NB) ) {
+        print "The value is $scalar\n";
+        (tied $scalar)->shunlock;
+ } else {
+        print "Another process has an exlusive lock.\n";
+ }
+
+
+If no argument is provided to C<shlock>, it defaults to LOCK_EX.  To
+unlock a variable do this:
 
  $knot->shunlock;
 
@@ -855,10 +999,31 @@ or
 
  (tied $scalar)->shunlock;
 
-Note that there is no mechanism for shared locks.
+or
 
-There are some pitfalls regarding locking and signals that you should
-make yourself aware of; these are discussed in L</NOTES>.
+ $knot->shlock(LOCK_UN);        # Same as calling shunlock
+
+There are some pitfalls regarding locking and signals about which you
+should make yourself aware; these are discussed in L</NOTES>.
+
+If you use the advisory locking, IPC::Shareable assumes that you know
+what you are doing and attempts some optimizations.  When you obtain
+a lock, either exclusive or shared, a fetch and thaw of the data is
+performed.  No additional fetch/thaw operations are performed until
+you release the lock and access the bound variable again.  During the
+time that the lock is kept, all accesses are perfomed on the copy in
+program memory.  If other processes do not honor the lock, and update
+the shared memory region unfairly, the process with the lock will not be in
+sync.  In other words, IPC::Shareable does not enforce the lock
+for you.  
+
+A similar optimization is done if you obtain an exclusive lock.
+Updates to the shared memory region will be postponed until you
+release the lock (or downgrade to a shared lock).
+
+Use of locking can significantly improve performance for operations
+such as iterating over an array, retrieving a list from a slice or 
+doing a slice assignment.
 
 =head1 REFERENCES
 
@@ -943,7 +1108,7 @@ In a file called B<server>:
  my $glue = 'data';
  my %options = (
      create    => 'yes',
-     exclusive => 'no',
+     exclusive => 0,
      mode      => 0644,
      destroy   => 'yes',
  );
@@ -976,10 +1141,10 @@ In a file called B<client>
  use IPC::Shareable;
  my $glue = 'data';
  my %options = (
-     create    => 'no',
-     exclusive => 'no',
+     create    => 0,
+     exclusive => 0,
      mode      => 0644,
-     destroy   => 'no',
+     destroy   => 0,
      );
  my %colours;
  tie %colours, 'IPC::Shareable', $glue, { %options } or
@@ -1072,21 +1237,46 @@ unlocks any locked variables when the process exits.  However, if an
 untrapped signal is received while a process holds an exclusive lock,
 DESTROY will not be called and the lock may be maintained even though
 the process has exited.  If this scares you, you might be better off
-implementing your own locking methods.
+implementing your own locking methods.  
+
+One advantage of using C<flock> on some known file instead of the
+locking implemented with semaphores in IPC::Shareable is that when a
+process dies, it automatically releases any locks.  This only happens
+with IPC::Shareable if the process dies gracefully.  The alternative
+is to attempt to account for every possible calamitous ending for your
+process (robust signal handling in Perl is a source of much debate,
+though it usually works just fine) or to become familiar with your
+system's tools for removing shared memory and semaphores.  This
+concern should be balanced against the significant performance
+improvements you can gain for larger data structures by using the
+locking mechanism implemented in IPC::Shareable.
 
 =item o
 
-There is a program called ipcs(1/8) that is available on at least
-Solaris and Linux that might be useful for cleaning moribund shared
-memory segments or semaphore sets produced by bugs in either
-IPC::Shareable or applications using it.
+There is a program called ipcs(1/8) (and ipcrm(1/8)) that is
+available on at least Solaris and Linux that might be useful for
+cleaning moribund shared memory segments or semaphore sets produced
+by bugs in either IPC::Shareable or applications using it.
 
 =item o
 
 This version of IPC::Shareable does not understand the format of
-shared memory segments created by earlier versions.  If you try to tie
-to such segments, you will get an error.  The only work around is to
-clear the shared memory segments and start with a fresh set.
+shared memory segments created by versions prior to 0.60.  If you try
+to tie to such segments, you will get an error.  The only work around
+is to clear the shared memory segments and start with a fresh set.
+
+=item o
+
+Iterating over a hash causes a special optimization if you have not
+obtained a lock (it is better to obtain a read (or write) lock before
+iterating over a hash tied to Shareable, but we attempt this
+optimization if you do not).  The fetch/thaw operation is performed
+when the first key is accessed.  Subsequent key and and value
+accesses are done without accessing shared memory.  Doing an
+assignment to the hash or fetching another value between key
+accesses causes the hash to be replaced from shared memory.  The
+state of the iterator in this case is not defined by the Perl
+documentation.  Caveat Emptor.
 
 =back
 
@@ -1096,21 +1286,25 @@ Thanks to all those with comments or bug fixes, especially
 
  Maurice Aubrey      <maurice@hevanet.com>
  Stephane Bortzmeyer <bortzmeyer@pasteur.fr>
- Michael Stevens     <michael@malkav.imaginet.co.uk>
- Richard Neal        <richard@imaginet.co.uk>
- Jason Stevens       <jstevens@chron.com> 
  Doug MacEachern     <dougm@telebusiness.co.nz>
  Robert Emmery       <roberte@netscape.com>
  Mohammed J. Kabir   <kabir@intevo.com>
+ Terry Ewing         <terry@intevo.com>
+ Tim Fries           <timf@dicecorp.com>
+ Joe Thomas          <jthomas@women.com>
+ Paul Makepeace      <Paul.Makepeace@realprogrammers.com>
+ Raphael Manfredi    <Raphael_Manfredi@pobox.com>
+ Lee Lindley         <Lee.Lindley@bigfoot.com>
+ Dave Rolsky         <autarch@urth.org>
 
 =head1 BUGS
 
-Certainly; this is alpha software. When you discover an
-anomaly, send me an email at bsugars@canoe.ca.
+Certainly; this is beta software. When you discover an anomaly, send
+an email to me at bsugars@canoe.ca.
 
 =head1 SEE ALSO
 
-perl(1), perltie(1), Storable(3), shmget(2) and other SysV IPC man
-pages.
+perl(1), perltie(1), Storable(3), shmget(2), ipcs(1), ipcrm(1)
+and other SysV IPC man pages.
 
 =cut

@@ -27,7 +27,7 @@ if ($pid == 0) {
 
     ++$t;
     my %thash = ();
-    tie(%thash, 'IPC::Shareable', 'hobj', { destroy => 'no' })
+    tie(%thash, 'IPC::Shareable', 'hobj', { destroy => 0 })
        or undef $ok;    
     print $ok ? "ok $t\n" : "not ok $t\n";
 

@@ -22,10 +22,10 @@ if ($pid == 0) {
     my @av;
     my $ipch = tie(@av, 'IPC::Shareable', "foco", {
 	create    => 1,
-	exclusive => 'no',
+	exclusive => 0,
 	mode      => 0666,
 	size      => 1024*512,
-	destroy   => 'no',
+	destroy   => 0,
     }) or undef $ok;
     @av = ();
     print $ok ? "ok $t\n" : "not ok $t\n";
@@ -47,7 +47,7 @@ if ($pid == 0) {
     my @av;
     my $ipch = tie(@av, 'IPC::Shareable', "foco", {
 	create    => 1,
-	exclusive => 'no',
+	exclusive => 0,
 	mode      => 0666,
 	size      => 1024*512,
 	destroy   => 'yes',

@@ -78,6 +78,10 @@ for ('a' .. 'z') {
 }
 print $ok ? "ok $t\n" : "not ok $t\n";
 
+IPC::Shareable->clean_up_all;
+tie($sv, 'IPC::Shareable', { destroy => 'yes' })
+    or croak "Could not tie scalar";
+
 # --- Deeply nested thingies
 ++$t;
 $sv->{this}->{is}->{nested}->{deeply}->[0]->[1]->[2] = 'found';
