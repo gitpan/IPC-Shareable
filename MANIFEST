@@ -7,6 +7,10 @@ Makefile.PL
 README
 TO_DO
 eg/client
+eg/get
+eg/hvtest1
+eg/hvtest2
+eg/put
 eg/server
 lib/IPC/Shareable.pm
 lib/IPC/Shareable/SharedMem.pm
@@ -18,6 +22,9 @@ t/20ref.t
 t/25ipc.t
 t/30lock.t
 t/35clean.t
+t/36ipcav.t
+t/38ipchv.t
 t/40ipcref.t
 t/45obj.t
 t/50ipcobj.t
+t/55lsync.t

@@ -18,7 +18,7 @@ use Storable 0.6 qw(
                     );
 
 use vars qw($VERSION);
-$VERSION = 0.51;
+$VERSION = 0.52;
 
 use constant DEBUGGING     => ($ENV{SHAREABLE_DEBUG} or 0);
 use constant SHM_BUFSIZ    =>  65536;
@@ -106,6 +106,7 @@ sub STORE {
 
     $Global_Reg{$self->{_shm}->id} ||= $self;
 
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
   TYPE: {
       if ($self->{_type} eq 'SCALAR') {
           my $val = shift;
@@ -123,7 +124,9 @@ sub STORE {
       if ($self->{_type} eq 'HASH') {
           my $key = shift;
           my $val = shift;
-          _mg_tie($self => $val) if _need_tie($val);
+	  if (_need_tie($val)) {
+            _mg_tie($self => $val);
+	  }
           $self->{_data}->{$key} = $val;
           last TYPE;
       }
@@ -276,6 +279,9 @@ sub PUSH {
     _trace @_                                                    if DEBUGGING;
     my $self = shift;
 
+    $Global_Reg{$self->{_shm}->id} ||= $self;
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
+
     push @{$self->{_data}} => @_;
     defined _freeze($self->{_shm} => $self->{_data}) or do {
         require Carp;
@@ -287,6 +293,7 @@ sub POP {
     _trace @_                                                    if DEBUGGING;
     my $self = shift;
 
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
     my $val = pop @{$self->{_data}};
     defined _freeze($self->{_shm} => $self->{_data}) or do {
         require Carp;
@@ -299,6 +306,7 @@ sub SHIFT {
     _trace @_                                                    if DEBUGGING;
     my $self = shift;
 
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
     my $val = shift @{$self->{_data}};
     defined _freeze($self->{_shm} => $self->{_data}) or do {
         require Carp;
@@ -311,6 +319,7 @@ sub UNSHIFT {
     _trace @_                                                    if DEBUGGING;
     my $self = shift;
 
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
     unshift @{$self->{_data}} => @_;
     defined _freeze($self->{_shm} => $self->{_data}) or do {
         require Carp;
@@ -322,6 +331,7 @@ sub SPLICE {
     _trace @_                                                    if DEBUGGING;
     my($self, $off, $n, @av) = @_;
 
+    $self->{_data} = _thaw($self->{_shm}, $self->{_data});
     my @val = splice @{$self->{_data}}, $off, $n => @av;
     defined _freeze($self->{_shm} => $self->{_data}) or do {
         require Carp;
@@ -690,9 +700,10 @@ IPC::Shareable - share Perl variables between processes
  (tied VARIABLE)->shlock;
  (tied VARIABLE)->shunlock;
 
- (tied VARIABLE)->destroy;
+ (tied VARIABLE)->remove;
 
  IPC::Shareable->clean_up;
+ IPC::Shareable->clean_up_all;
 
 =head1 CONVENTIONS
 
@@ -882,7 +893,7 @@ this may not be desirable: other processes may still need a handle on
 the relevant shared memory segment.  IPC::Shareable therefore provides
 an interface to allow the application to control the timing of removal
 of shared memory segments.  The interface consists of three methods -
-destroy(), clean_up(), and clean_up_all() - and the B<destroy> option
+remove(), clean_up(), and clean_up_all() - and the B<destroy> option
 to tie().
 
 =over 4

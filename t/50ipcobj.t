@@ -41,8 +41,9 @@ my $pid = fork;
 defined $pid or die "Cannot fork : $!";
 if ($pid == 0) {
     # --- Child
-    local $SIG{ALRM} = sub { 1 };
-    sleep;
+    my $awake = 0;
+    local $SIG{ALRM} = sub { $awake = 1 };
+    sleep unless $awake;
     my $d;
 
     ++$t;
@@ -79,7 +80,6 @@ if ($pid == 0) {
     $d->first('foobar');
     $d->second('barfoo');
 
-    sleep 2;
     kill ALRM => $pid;
     waitpid($pid, 0);
 

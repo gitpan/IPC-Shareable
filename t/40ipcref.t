@@ -16,8 +16,9 @@ my $pid = fork;
 defined $pid or die "Cannot fork : $!";
 if ($pid == 0) {
     # --- Child
-    local $SIG{ALRM} = sub { 1 };
-    sleep;
+    my $awake = 0;
+    local $SIG{ALRM} = sub { $awake = 1 };
+    sleep unless $awake;
     tie($hv, 'IPC::Shareable', 'hash', { destroy => 'no' })
 	or undef $ok;
     tie($av, 'IPC::Shareable', 'arry', { destroy => 'no' })
@@ -65,7 +66,6 @@ if ($pid == 0) {
 	or undef $ok;
     $hv = 'baz';
     $av = 'bong';
-    sleep 2;
     kill ALRM => $pid;
     waitpid($pid, 0);
 

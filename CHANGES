@@ -90,3 +90,14 @@ Revision history for Perl extension IPC::Shareable.
         - Stopped tests from leaking shm segments
         - Added test of argument parsing
         - doc fixes
+
+0.52  Thu Sep 14 12:30:17 EDT 2000
+        - Now STORE, PUSH, POP, etc all call _thaw() before doing
+          their business.
+        - Refined SIGALRM handlers in test scripts
+        - Fixed concurrency issues affecting tied arrays and hashes;
+          thanks to thanks to Robert Emmery <roberte@netscape.com>,
+          Terry Ewing <terry@intevo.com>, Tim Fries
+          <timf@dicecorp.com>, and Joe Thomas <jthomas@women.com>.
+        - Doc fixes thanks to Paul Makepeace
+          <Paul.Makepeace@realprogrammers.com>

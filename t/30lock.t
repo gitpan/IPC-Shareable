@@ -17,8 +17,9 @@ my $pid = fork;
 defined $pid or die "Cannot fork: $!\n";
 if ($pid == 0) {
     # --- Child
-    local $SIG{ALRM} = sub { 1 };
-    sleep;
+    my $awake = 0;
+    local $SIG{ALRM} = sub { $awake = 1 };
+    sleep unless $awake;
     tie($sv, 'IPC::Shareable', data => { destroy => 'no' })
 	or die "child process can't tie \$sv";
     for (0 .. 99) {
@@ -32,7 +33,6 @@ if ($pid == 0) {
     tie($sv, 'IPC::Shareable', data => { create => 'yes', destroy => 'yes' })
 	or die "parent process can't tie \$sv";
     $sv = 0;
-    sleep 2;
     kill ALRM => $pid;
     for (0 .. 99) {
 	(tied $sv)->shlock;

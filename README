@@ -73,6 +73,30 @@ Copies of this document in various formats can be found in the doc
 directory of the distribution.  In there will you find information
 about usage, pitfalls, etc.
 
+Known Problems
+--------------
+
+make test may fail with the message
+
+    Could not create semaphore set: No space left on device
+
+This is because the test suite has used up all of the allowed number
+of semaphore sets and/or semaphores (SEMMNI and/or SEMMNS
+respectively).  This seems to happen often on FreeBSD, where the
+default value is rather low.  The only solution is to increase SEMMNI
+and/or SEMMNS for the system.  Consult your system documentation for
+how to do this.
+
+make test may fail with the message
+
+    Munged shared memory segment (size exceeded?)
+
+This is likely because the tests are exceeding the maximum size of a
+shared memory segment (SHMMAX) or the system-wide limit on shared
+memory size (SHMALL).  The only solution is to increase SHMMAX and/or
+SHMALL for the system.  Consult your system documentation for how to
+do this.
+
 Etc
 ---
 
@@ -90,4 +114,4 @@ see Maurice Aubrey's IPC::ShareLite.
 
 --
 Ben Sugars (bsugars@canoe.ca)
-May 5, 2000
+September 14, 2000

@@ -41,8 +41,9 @@ my $pid = fork;
 defined $pid or die "Cannot fork : $!";
 if ($pid == 0) {
     # --- Child
-    local $SIG{ALRM} = sub { 1 };
-    sleep;
+    my $awake = 0;
+    local $SIG{ALRM} = sub { $awake = 1 };
+    sleep unless $awake;
     my $s = tie($sv, 'IPC::Shareable', 'hash', { destroy => 'no' })
 	or undef $ok;
     print $ok ? "ok $t\n" : "not ok $t\n";
@@ -76,7 +77,6 @@ if ($pid == 0) {
     # --- Parent
     my $s = tie($sv, 'IPC::Shareable', 'hash', { create => 'yes', destroy => 'no' })
 	or undef $ok;
-    sleep 2;
     kill ALRM => $pid;
     my $id = $s->{_shm}->id;
     waitpid($pid, 0);
