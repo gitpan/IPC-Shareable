@@ -92,6 +92,8 @@ if ($pid == 0) {
     ++$t;
     $ok = ($d->second eq 'this');
     print $ok ? "ok $t\n" : "not ok $t\n";
+
+    IPC::Shareable->clean_up_all;
 }
 
 # --- Done!

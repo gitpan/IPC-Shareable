@@ -1,5 +1,7 @@
 package IPC::Shareable;
 
+use Carp qw(cluck);
+
 require 5.00503;
 use strict;
 use IPC::Semaphore;
@@ -16,7 +18,7 @@ use Storable 0.6 qw(
                     );
 
 use vars qw($VERSION);
-$VERSION = do { my @r=(q$Revision 0.50 $ =~ /\d+/g); sprintf "%d."."%02d"x$#r,@r };
+$VERSION = 0.51;
 
 use constant DEBUGGING     => ($ENV{SHAREABLE_DEBUG} or 0);
 use constant SHM_BUFSIZ    =>  65536;
@@ -28,7 +30,7 @@ use constant SHM_LOCK_UN   => -1;
 use constant SHM_EXISTS    =>  1;
 
 my %Def_Opts = (
-                key       => '',
+                key       => IPC_PRIVATE,
                 create    => '',
                 exclusive => '',
                 destroy   => '',
@@ -408,7 +410,7 @@ sub _freeze {
 
     my $ice = freeze $water;
     my $stuff = 'IPC::Shareable' . $ice;
-    _debug "writing to shared memory", $stuff                    if DEBUGGING;
+    _debug "writing to shm segment ", $s->id, ": ", $stuff       if DEBUGGING;
     $s->shmwrite($stuff);
 }
 
@@ -417,10 +419,14 @@ sub _thaw {
     my $s = shift;
 
     my $stuff = $s->shmread;
-    _debug "read from shared memory", $stuff                     if DEBUGGING;
+    _debug "read from shm segment ", $s->id, ": ", $stuff        if DEBUGGING;
     my($tag, $ice) = unpack 'A14 A*' => $stuff;
     if ($tag eq 'IPC::Shareable') {
         my $water = thaw $ice;
+	length($water) or do {
+	    require Carp;
+	    Carp::croak "Munged shared memory segment (size exceeded?)";
+	};
         return $water;
     } else {
         return;
@@ -496,8 +502,12 @@ sub _parse_args {
     } else {
         $opts->{key} = $proto;
     }
-    while (my ($k, $v) = each %$opts) {
-        $opts->{$k} = '' if $v eq 'no';
+    for my $k (keys %Def_Opts) {
+	if (not defined $opts->{$k}) {
+	    $opts->{$k} = $Def_Opts{$k};
+	} elsif ($opts->{$k} eq 'no') {
+	    $opts->{$k} = '';
+	}
     }
     $opts->{_owner} = ($opts->{_owner} or $$);
     $opts->{_magic} = ($opts->{_magic} or '');
@@ -750,9 +760,10 @@ The following fields are recognized in the options hash.
 The B<key> field is used to determine the GLUE when using the
 three-argument form of the call to tie().  This argument is then, in
 turn, used as the KEY argument in subsequent calls to shmget() and
-semget().  If this field is not provided, a value of IPC_PRIVATE is
-assumed (meaning that your variables cannot be shared with other
-processes).
+semget().
+
+The default value is IPC_PRIVATE, meaning that your variables cannot
+be shared with other processes.
 
 =item B<create>
 
@@ -762,7 +773,8 @@ IPC::Shareable will create a new binding associated with GLUE as
 needed.  If B<create> is false (or equal to B<no>), IPC::Shareable
 will not attempt to create a new shared memory segment associated with
 GLUE.  In this case, a shared memory segment associated with GLUE must
-already exist or the call to tie() will fail and return undef.
+already exist or the call to tie() will fail and return undef.  The
+default is B<no>.
 
 =item B<exclusive>
 
@@ -770,7 +782,7 @@ If B<exclusive> field is set to a true value, calls to tie() will fail
 (returning undef) if a data binding associated with GLUE already
 exists.  If set to a false value (or equal to B<no>), calls to tie()
 will succeed even if a shared memory segment associated with GLUE
-already exists.
+already exists.  The default is B<no>.
 
 =item B<mode>
 
@@ -778,14 +790,14 @@ The I<mode> argument is an octal number specifying the access
 permissions when a new data binding is being created.  These access
 permission are the same as file access permissions in that 0666 is
 world readable, 0600 is readable only by the effective UID of the
-process creating the shared variable, etc.  If not provided, a default
-of 0666 (world readable and writable) will be assumed.
+process creating the shared variable, etc.  The default is 0666 (world
+readable and writable).
 
 =item B<destroy>
 
 If set to a true value, the shared memory segment underlying the data
 binding will be removed when the process calling tie() exits
-(gracefully)[3].  Use this option with care.
+(gracefully)[3].  Use this option with care.  The default is B<no>.
 
 =item B<size>
 
@@ -1077,6 +1089,8 @@ Thanks to all those with comments or bug fixes, especially
  Richard Neal        <richard@imaginet.co.uk>
  Jason Stevens       <jstevens@chron.com> 
  Doug MacEachern     <dougm@telebusiness.co.nz>
+ Robert Emmery       <roberte@netscape.com>
+ Mohammed J. Kabir   <kabir@intevo.com>
 
 =head1 BUGS
 

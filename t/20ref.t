@@ -84,6 +84,7 @@ $sv->{this}->{is}->{nested}->{deeply}->[0]->[1]->[2] = 'found';
 $ok = ($sv->{this}->{is}->{nested}->{deeply}->[0]->[1]->[2] eq 'found');
 print $ok ? "ok $t\n" : "not ok $t\n";
 
+IPC::Shareable->clean_up_all;
+
 # --- Done!
 exit;
-

@@ -83,3 +83,10 @@ Revision history for Perl extension IPC::Shareable.
         - Rewrote test suite and moved into t subdirectory
         - Updated man page
 
+0.51  Fri May  5 23:47:06 EDT 2000
+        - Fixed bug that would cause IPC::Shareable::BUF_SIZ to be
+          ignored; thanks to Robert Emmery <roberte@netscape.com> and
+          Mohammed J. Kabir <kabir@intevo.com> for reporting.
+        - Stopped tests from leaking shm segments
+        - Added test of argument parsing
+        - doc fixes
