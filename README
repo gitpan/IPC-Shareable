@@ -1,0 +1,93 @@
+----------------------------------------------------------------------
+    This is free software; you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License , or
+    (at your option) any later version.
+ 
+    This software is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+ 
+    You should have received a copy of the GNU General Public License
+    along with this software. If not, write to the Free Software
+    Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
+----------------------------------------------------------------------
+
+	*** This is alpha software -- use at your own risks ***
+
+
+Introduction
+------------
+IPC::Shareable allows you to tie a variable to shared memory making it
+easy to share the contents of that variable with other Perl processes.
+Scalars, arrays, and hashes can be tied.  The variable being tied may
+contain arbitrarily complex data structures - including references to
+arrays, hashes of hashes, etc.
+
+
+Installation
+------------
+0.  Prerequisites:
+	-Perl version 5.005_03 or more recent.
+	-System V IPC (shmget(2), shmctl(2), etc).
+	-Storable.pm, version 0.6 or more recent.
+
+1.  Installation steps:
+	-from the directory where this file is located, type:
+	perl Makefile.PL
+	make
+	make test
+	make install
+
+
+Incompatibility Alert
+---------------------
+
+This version contains some incompatiblities from earlier versions of
+IPC::Shareable.  Here's a list of them.
+
+1. Earlier versions used to accept upper-case values of YES/NO as
+elements in the options hash; this version does not.
+
+2. Earlier versions would try to allow data of arbitrary length to be
+tied to shared memory.  This well-intentioned (but misguided) approach
+convoluted the code.  Current versions of IPC::Shareable do not allow
+data of arbitrary length.  Each individual tied variable may not have
+a serialized length greater than the system's maximum shared memory
+segment size.
+
+3. This version of IPC::Shareable does not understand the format of
+shared memory segments created by earlier versions.  If you try to tie
+to such segments, you will get an error.  The only work around is to
+clear the shared memory segments and start with a fresh set.
+
+The benefits afforded in terms of code simplication and performance on
+shorter segments more than make up for the above incompatibilities.
+
+Documentation
+-------------
+
+The man page for IPC::Shareable is embedded in IPC::Shareable.pm.
+Copies of this document in various formats can be found in the doc
+directory of the distribution.  In there will you find information
+about usage, pitfalls, etc.
+
+Etc
+---
+
+I have tested this on Linux only. YMMV may vary on other systems.
+
+The two-year hiatus between releases of IPC::Shareable is symptomatic
+of the amount of time I have to contribute to this project.  Help save
+the world! Submit me patches and improvements.
+
+Also, don't be alarmed if I can't answer support emails.  If this
+bothers you, you can always ask for your money back :-)
+
+For a more light-weight, non-tie()-based interface to shared memory
+see Maurice Aubrey's IPC::ShareLite.
+
+--
+Ben Sugars (bsugars@canoe.ca)
+March 22, 2000
