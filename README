@@ -97,6 +97,13 @@ memory size (SHMALL).  The only solution is to increase SHMMAX and/or
 SHMALL for the system.  Consult your system documentation for how to
 do this.
 
+This failure could also mean that IPC::Shareable doesn't like your
+version of Storable (IPC::Shareable makes some assumptions about the
+structure of serialized data).  This message would happen, for
+instance, when version 0.53 of IPC::Shareable was used in conjunction
+with 1.0.x versions of Storable.  If you're having problems, try using
+Storable 1.0.7 which is known to work with IPC::Shareable 0.54.
+
 Etc
 ---
 
@@ -114,4 +121,4 @@ see Maurice Aubrey's IPC::ShareLite.
 
 --
 Ben Sugars (bsugars@canoe.ca)
-November 14, 2000
+January 8, 2001

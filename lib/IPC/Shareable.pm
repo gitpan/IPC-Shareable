@@ -18,7 +18,7 @@ use Storable 0.6 qw(
                     );
 
 use vars qw($VERSION);
-$VERSION = 0.53;
+$VERSION = 0.54;
 
 use constant DEBUGGING     => ($ENV{SHAREABLE_DEBUG} or 0);
 use constant SHM_BUFSIZ    =>  65536;
@@ -430,7 +430,7 @@ sub _thaw {
 
     my $stuff = $s->shmread;
     _debug "read from shm segment ", $s->id, ": ", $stuff        if DEBUGGING;
-    my($tag, $ice) = unpack 'A14 A*' => $stuff;
+    my($tag, $ice) = unpack 'a14 a*' => $stuff;
     if ($tag eq 'IPC::Shareable') {
         my $water = thaw $ice;
 	defined($water) or do {
