@@ -12,13 +12,14 @@ my $t  = 1;
 my $ok = 1;
 my $sv;
 
+my $awake = 0;
+local $SIG{ALRM} = sub { $awake = 1 };
+
 # --- Test locking
 my $pid = fork;
 defined $pid or die "Cannot fork: $!\n";
 if ($pid == 0) {
     # --- Child
-    my $awake = 0;
-    local $SIG{ALRM} = sub { $awake = 1 };
     sleep unless $awake;
     tie($sv, 'IPC::Shareable', data => { destroy => 'no' })
 	or die "child process can't tie \$sv";

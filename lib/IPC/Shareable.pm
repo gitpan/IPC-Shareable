@@ -18,7 +18,7 @@ use Storable 0.6 qw(
                     );
 
 use vars qw($VERSION);
-$VERSION = 0.52;
+$VERSION = 0.53;
 
 use constant DEBUGGING     => ($ENV{SHAREABLE_DEBUG} or 0);
 use constant SHM_BUFSIZ    =>  65536;
@@ -433,7 +433,7 @@ sub _thaw {
     my($tag, $ice) = unpack 'A14 A*' => $stuff;
     if ($tag eq 'IPC::Shareable') {
         my $water = thaw $ice;
-	length($water) or do {
+	defined($water) or do {
 	    require Carp;
 	    Carp::croak "Munged shared memory segment (size exceeded?)";
 	};

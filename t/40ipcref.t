@@ -11,13 +11,14 @@ use IPC::Shareable;
 my $t  = 1;
 my $ok = 1;
 
+my $awake = 0;
+local $SIG{ALRM} = sub { $awake = 1 };
+
 my($av, $hv);
 my $pid = fork;
 defined $pid or die "Cannot fork : $!";
 if ($pid == 0) {
     # --- Child
-    my $awake = 0;
-    local $SIG{ALRM} = sub { $awake = 1 };
     sleep unless $awake;
     tie($hv, 'IPC::Shareable', 'hash', { destroy => 'no' })
 	or undef $ok;

@@ -19,12 +19,13 @@ my %shareOpts = (
 		 destroy =>      'yes',
 		 );
 
+my $awake = 0;
+local $SIG{ALRM} = sub { $awake = 1 };
+
 my $pid = fork;
 defined $pid or die "Cannot fork: $!";
 if ($pid == 0) {
     # --- Kid
-    my $awake = 0;
-    local $SIG{ALRM} = sub { $awake = 1 };
     sleep unless $awake;
     $awake = 0;
     my %hv;

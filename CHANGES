@@ -101,3 +101,9 @@ Revision history for Perl extension IPC::Shareable.
           <timf@dicecorp.com>, and Joe Thomas <jthomas@women.com>.
         - Doc fixes thanks to Paul Makepeace
           <Paul.Makepeace@realprogrammers.com>
+
+0.52  Tue Nov 14 00:33:35 EST 2000
+        - Fixed race condition in test suite causing intermitent
+          failures.
+        - Better checking for success of calls to Storable::thaw();
+          thanks to Raphael Manfredi <Raphael_Manfredi@pobox.com>.

@@ -34,6 +34,9 @@ $s->remove;
 $ok = gonzo($id);
 print $ok ? "ok $t\n" : "not ok $t\n";
 
+my $awake = 0;
+local $SIG{ALRM} = sub { $awake = 1 };
+
 # --- remove(), clean_up(), clean_up_all()
 ++$t;
 $ok = 1;
@@ -41,8 +44,6 @@ my $pid = fork;
 defined $pid or die "Cannot fork : $!";
 if ($pid == 0) {
     # --- Child
-    my $awake = 0;
-    local $SIG{ALRM} = sub { $awake = 1 };
     sleep unless $awake;
     my $s = tie($sv, 'IPC::Shareable', 'hash', { destroy => 'no' })
 	or undef $ok;
