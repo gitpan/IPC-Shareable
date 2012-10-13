@@ -70,6 +70,7 @@ if ($pid == 0) {
     });
     %hv = ();
     kill ALRM => $pid;
+    sleep 1;           # Allow time for child to process the signal before next ALRM comes in
     
     for (qw(eenie meenie minie moe)) {
 	$ipch->shlock();

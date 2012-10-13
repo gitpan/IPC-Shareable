@@ -15,10 +15,11 @@ use Storable 0.6 qw(
                     freeze
                     thaw
                     );
+use Scalar::Util;
 
 use vars qw( $VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS );
 
-$VERSION = 0.60;
+$VERSION = 0.61;
 
 use constant LOCK_SH => 1;
 use constant LOCK_EX => 2;
@@ -452,7 +453,7 @@ sub STORESIZE {
     my $n    = shift;
 
     $self->{_data} = _thaw($self->{_shm}) unless $self->{_lock};
-    $#{@{$self->{_data}}} = $n - 1;
+    $#{$self->{_data}} = $n - 1;
     if ($self->{_lock} & LOCK_EX) {
         $self->{_was_changed} = 1;
     } else {
@@ -695,22 +696,22 @@ sub _mg_tie {
     # XXX I wish I didn't have to take a copy of data here and copy it back in
     # XXX Also, have to peek inside potential objects to see their implementation
     my $kid;
-    my $type = ref($val) ? "$val" : '';
-    if ($type =~ /SCALAR/) {
+    my $type = Scalar::Util::reftype( $val ) || '';
+    if ($type eq "SCALAR") {
         my $copy = $$val;
         $kid = tie $$val => 'IPC::Shareable', $key, { %opts } or do {
             require Carp;
             Carp::croak "Could not create inner tie";
         };
         $$val = $copy;
-    } elsif ($type =~ /ARRAY/) {
+    } elsif ($type eq "ARRAY") {
         my @copy = @$val;
         $kid = tie @$val => 'IPC::Shareable', $key, { %opts } or do {
             require Carp;
             Carp::croak "Could not create inner tie";
         };
         @$val = @copy;
-    } elsif ($type =~ /HASH/) {
+    } elsif ($type eq "HASH") {
         my %copy = %$val;
         $kid = tie %$val => 'IPC::Shareable', $key, { %opts } or do {
             require Carp;
@@ -726,17 +727,17 @@ sub _mg_tie {
 }
 
 sub _is_kid {
-    my $data = shift;
-    $data or return;
-    my $type = "$data";
+    my $data = shift or return;
 
-    # XXX Have to peek inside potential objects to see their implementation
+    my $type = Scalar::Util::reftype( $data );
+    return unless $type;
+
     my $obj;
-    if ($type =~ /HASH/) {
+    if ($type eq "HASH") {
         $obj = tied %$data;
-    } elsif ($type =~ /ARRAY/) { 
+    } elsif ($type eq "ARRAY") { 
         $obj = tied @$data;
-    } elsif ($type =~ /SCALAR/) {
+    } elsif ($type eq "SCALAR") {
         $obj = tied $$data;
     }
 
@@ -750,13 +751,13 @@ sub _is_kid {
 sub _need_tie {
     my $val = shift;
 
-    # XXX Have to peek inside potential objects to see their implementation
-    my $type = ref $val ? "$val" : '';
-    if ($type =~ /SCALAR/) {
+    my $type = Scalar::Util::reftype( $val );
+    return unless $type;
+    if ($type eq "SCALAR") {
         return !(tied $$val);
-    } elsif ($type =~ /ARRAY/) {
+    } elsif ($type eq "ARRAY") {
         return !(tied @$val);
-    } elsif ($type =~ /HASH/) {
+    } elsif ($type eq "HASH") {
         return !(tied %$val);
     } else {
         return;

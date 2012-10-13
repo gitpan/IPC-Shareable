@@ -7,5 +7,9 @@ WriteMakefile(
               LIBS         => [''],
               DEFINE       => '',
               INC          => '',
-              PREREQ_PM    => { Storable => 0.607 },
+              PREREQ_PM    => { 
+                               "Storable" => 0.607,
+                               "Scalar::Util" => 0,
+                               "IPC::Semaphore" => 0,
+              },
 );

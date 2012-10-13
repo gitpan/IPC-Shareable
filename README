@@ -161,3 +161,15 @@ see Maurice Aubrey's IPC::ShareLite.
 --
 Ben Sugars (bsugars@canoe.ca)
 March 5, 2001
+
+New co-maintainer
+-----------------
+
+October 8, 2012
+
+I became co-maintainer so that I could apply some patches that had
+been sitting around on rt.cpan.org for a few years.  Let me know
+if there is some way I can help, but understand that I have little
+experience with the module itself.
+
+Mike South (msouth@gmail.com)
